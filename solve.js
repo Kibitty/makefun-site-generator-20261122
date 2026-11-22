@@ -159,7 +159,9 @@ function parseFrontMatter(lines) {
     data[key] = v.value;
   }
   if (!Object.hasOwn(data, 'title')) return { error: 'no title' };
-  return { data, bodyStart: close + 1 };
+  let bodyOffset = 0;
+  for (let i = 0; i <= close; i++) bodyOffset += lines[i].length + 1;
+  return { data, bodyStart: close + 1, bodyOffset };
 }
 
 // ---------------------------------------------------------------- markdown
@@ -425,11 +427,10 @@ function renderMarkdown(lines, from, to, env) {
   return { html, toc, excerpt: excerpt ?? '' };
 }
 
-// Words in lines[from..to): runs of non-whitespace. The joiner "\n" is
-// whitespace, so matching the joined body equals /\S+/g on the body string.
+// Words in a body string: runs of non-whitespace.
 const WORDS_RE = /\S+/g;
-function wordsOfLines(lines, from, to) {
-  const m = lines.slice(from, to).join('\n').match(WORDS_RE);
+function wordsOf(text) {
+  const m = text.match(WORDS_RE);
   return m === null ? 0 : m.length;
 }
 
@@ -737,8 +738,10 @@ export function run(input) {
   const sources = [];
   const statics = [];
   for (const f of files) {
-    if (f.path.endsWith('.md')) sources.push({ path: f.path, lines: f.content.replace(/\r\n?/g, '\n').split('\n') });
-    else statics.push({ path: f.path, content: f.content });
+    if (f.path.endsWith('.md')) {
+      const text = f.content.replace(/\r\n?/g, '\n');
+      sources.push({ path: f.path, text, lines: text.split('\n') });
+    } else statics.push({ path: f.path, content: f.content });
   }
 
   // 2. Front matter and the refusal checks, in order.
@@ -751,6 +754,7 @@ export function run(input) {
     }
     s.data = fm.data;
     s.bodyStart = fm.bodyStart;
+    s.bodyOffset = fm.bodyOffset;
     s.post = s.path.startsWith('posts/');
     const own = RESERVED.find((d) => d !== 'posts' && s.path.startsWith(`${d}/`));
     if (own !== undefined) {
@@ -811,7 +815,7 @@ export function run(input) {
     s.html = md.html;
     s.toc = md.toc;
     s.excerpt = md.excerpt;
-    s.words = wordsOfLines(s.lines, s.bodyStart, s.lines.length);
+    s.words = wordsOf(s.text.slice(s.bodyOffset));
   }
 
   // 5. Collections: posts newest first, then by slug.
